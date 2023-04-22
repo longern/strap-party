@@ -9,7 +9,12 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/ws": "^8.5.4",
     "typescript": "^5.0.2",
     "vite": "^4.3.0"
+  },
+  "dependencies": {
+    "itty-router": "^3.0.12",
+    "ws": "^8.13.0"
   }
 }
