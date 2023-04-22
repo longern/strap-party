@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { createServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -11,7 +12,7 @@ const server = createServer(function (req, res) {
     return;
   }
 
-  const requestId = Math.random().toString(36).slice(2);
+  const requestId = crypto.randomUUID();
   new Promise<Response>((resolve, reject) => {
     requestMap.set(requestId, resolve);
     setTimeout(() => reject(new Error("Timeout")), 10000);
@@ -60,6 +61,13 @@ wss.on("connection", function connection(ws, request) {
   });
 
   ws.on("close", (code, reason) => console.info(code, reason.toString()));
+
+  ws.send(
+    JSON.stringify({
+      className: "Env",
+      entries: process.env,
+    })
+  );
 });
 
 server.listen(5794, "0.0.0.0");
