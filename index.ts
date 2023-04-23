@@ -18,7 +18,7 @@ const server = createServer(function (req, res) {
     setTimeout(() => reject(new Error("Timeout")), 10000);
   })
     .then(async (response: Response) => {
-      res.statusCode = response.status || 200;
+      res.writeHead(response.status || 200, response.headers as any);
       res.end(response.text);
     })
     .catch((error: Error) => {
@@ -29,18 +29,25 @@ const server = createServer(function (req, res) {
       requestMap.delete(requestId);
     });
 
-  backend.send(
-    JSON.stringify({
-      id: requestId,
-      className: "Request",
-      init: {
-        url: req.url,
-        method: req.method,
-        headers: req.headers,
-        body: req.read(),
-      },
-    })
-  );
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk.toString();
+  });
+
+  req.on("end", () => {
+    backend!.send(
+      JSON.stringify({
+        id: requestId,
+        className: "Request",
+        init: {
+          url: req.url,
+          method: req.method,
+          headers: req.headers,
+          body,
+        },
+      })
+    );
+  });
 });
 const wss = new WebSocketServer({ server });
 
