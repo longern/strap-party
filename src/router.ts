@@ -1,9 +1,7 @@
 import { Router, RequestLike } from "itty-router";
 import { createCors } from "itty-cors";
 
-const { preflight, corsify } = createCors({
-  methods: ["*"],
-});
+const { preflight, corsify } = createCors({ methods: ["*"] });
 
 const router = Router();
 const resources: Record<
@@ -33,6 +31,12 @@ router.post("/", async (req, env) => {
 
   peerConnection.addEventListener("datachannel", (event) => {
     resources[resourceId].dataChannel = event.channel;
+  });
+
+  peerConnection.addEventListener("connectionstatechange", function () {
+    if (["failed", "closed"].includes(peerConnection.connectionState)) {
+      delete resources[resourceId];
+    }
   });
 
   peerConnection.setRemoteDescription({ type: "offer", sdp: offer });

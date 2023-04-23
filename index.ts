@@ -52,7 +52,7 @@ const server = createServer(function (req, res) {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", function connection(ws, request) {
-  if (!["127.0.0.1", "::1"].includes(request.socket.remoteAddress as string))
+  if (!["127.0.0.1", "::1", "localhost"].includes(request.socket.remoteAddress as string))
     return ws.close();
 
   backend = ws;
