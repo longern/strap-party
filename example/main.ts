@@ -1,16 +1,10 @@
-const conn = new RTCPeerConnection();
-conn.createDataChannel("main", {
-  ordered: false,
-});
-const offer = await conn.createOffer();
-await conn.setLocalDescription(offer);
+import { Client } from "./client";
 
-const answer = await fetch("http://localhost:5794/", {
-  method: "POST",
-  headers: { "Content-Type": "application/sdp" },
-  body: conn.localDescription!.sdp,
-}).then((res) => res.text());
+async function fetchWasm() {
+  const res = await fetch(new URL("server.wasm", import.meta.url));
+  return res.arrayBuffer();
+}
 
-conn.setRemoteDescription({ type: "answer", sdp: answer });
+new Client("http://localhost:5794/", fetchWasm);
 
 export {};

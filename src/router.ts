@@ -8,6 +8,7 @@ const resources: Record<
   string,
   { peerConnection: RTCPeerConnection; dataChannel: RTCDataChannel | null }
 > = {};
+let serverAsm: WebAssembly.WebAssemblyInstantiatedSource | null = null;
 
 async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
   return new Promise<RTCSessionDescriptionInit>((resolve) => {
@@ -23,6 +24,43 @@ async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
 
 router.all("*", preflight as any);
 
+interface GameServer {
+  handle_message(message: string): void;
+}
+
+function handleDataChannel(channel: RTCDataChannel) {
+  channel.binaryType = "arraybuffer";
+  if (!serverAsm) {
+    channel.send(
+      JSON.stringify({
+        status: 404,
+      })
+    );
+  } else {
+    channel.send(
+      JSON.stringify({
+        status: 200,
+      })
+    );
+  }
+
+  channel.addEventListener("message", async function (event) {
+    if (event.data instanceof ArrayBuffer) {
+      if (!serverAsm) {
+        try {
+          serverAsm = await WebAssembly.instantiate(event.data);
+          this.send(JSON.stringify({ status: 204 }));
+        } catch (e: any) {
+          this.send(JSON.stringify({ status: 400, message: e.message }));
+        }
+      }
+    } else {
+      const exports = serverAsm?.instance.exports as unknown as GameServer;
+      exports.handle_message(event.data);
+    }
+  });
+}
+
 router.post("/", async (req, env) => {
   const offer: string = await req.text();
   const peerConnection = new RTCPeerConnection();
@@ -31,6 +69,7 @@ router.post("/", async (req, env) => {
 
   peerConnection.addEventListener("datachannel", (event) => {
     resources[resourceId].dataChannel = event.channel;
+    handleDataChannel(event.channel);
   });
 
   peerConnection.addEventListener("connectionstatechange", function () {
