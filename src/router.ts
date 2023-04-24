@@ -25,38 +25,53 @@ async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
 router.all("*", preflight as any);
 
 interface GameServer {
-  handle_message(message: string): void;
+  memory: WebAssembly.Memory;
+  ondatachannel(channelId: number): void;
+  onmessage(channelId: number, buffer: number, length: number): void;
 }
 
+function send(id: number, begin: number, length: number) {
+  const exports = serverAsm?.instance.exports as unknown as GameServer;
+  const buffer = exports.memory.buffer.slice(begin, length);
+  channels[id].send(buffer);
+}
+
+const channels: Record<number, RTCDataChannel> = {};
 function handleDataChannel(channel: RTCDataChannel) {
+  // Max id in channels.
+  const id = Object.keys(channels).reduce((a, b) => Math.max(a, +b), 0) + 1;
+  channels[id] = channel;
+
   channel.binaryType = "arraybuffer";
   if (!serverAsm) {
-    channel.send(
-      JSON.stringify({
-        status: 404,
-      })
-    );
+    channel.send(JSON.stringify({ status: 404 }));
   } else {
-    channel.send(
-      JSON.stringify({
-        status: 200,
-      })
-    );
+    channel.send(JSON.stringify({ status: 200 }));
   }
 
+  function onopen() {
+    if (!serverAsm) return;
+    const exports = serverAsm?.instance.exports as unknown as GameServer;
+    exports.ondatachannel(id);
+  }
+
+  onopen();
+
   channel.addEventListener("message", async function (event) {
-    if (event.data instanceof ArrayBuffer) {
-      if (!serverAsm) {
-        try {
-          serverAsm = await WebAssembly.instantiate(event.data);
-          this.send(JSON.stringify({ status: 204 }));
-        } catch (e: any) {
-          this.send(JSON.stringify({ status: 400, message: e.message }));
-        }
+    const data = event.data as ArrayBuffer;
+    if (!serverAsm) {
+      try {
+        serverAsm = await WebAssembly.instantiate(data, { env: { send } });
+        onopen();
+        this.send(JSON.stringify({ status: 204 }));
+      } catch (e: any) {
+        this.send(JSON.stringify({ status: 400, message: e.message }));
       }
     } else {
       const exports = serverAsm?.instance.exports as unknown as GameServer;
-      exports.handle_message(event.data);
+      const array = new Uint8Array(exports.memory.buffer, 0, data.byteLength);
+      array.set(new Uint8Array(data));
+      exports.onmessage(id, array.byteOffset, array.length);
     }
   });
 }

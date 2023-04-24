@@ -1,13 +1,14 @@
 class Client {
   serverEndpoint: string;
   serverAsm: () => Promise<ArrayBuffer>;
+  channel: RTCDataChannel;
 
   constructor(serverEndpoint: string, serverAsm: () => Promise<ArrayBuffer>) {
     this.serverEndpoint = serverEndpoint;
     this.serverAsm = serverAsm;
 
     const conn = new RTCPeerConnection();
-    const channel = conn.createDataChannel("main", {
+    this.channel = conn.createDataChannel("main", {
       ordered: false,
     });
     conn.createOffer().then(async (offer) => {
@@ -21,14 +22,25 @@ class Client {
 
       conn.setRemoteDescription({ type: "answer", sdp: answer });
 
-      channel.addEventListener("message", function (event) {
-        console.log(event.data);
-        const data = event.data as string;
+      this.channel.addEventListener("message", function (event) {
+        if (typeof event.data !== "string") return;
+        const data = event.data;
         const { status } = JSON.parse(data);
         if (status === 404) {
           serverAsm().then((bytes) => this.send(bytes));
         }
       });
+    });
+  }
+
+  send(data: ArrayBuffer) {
+    this.channel.send(data);
+  }
+
+  onmessage(callback: (data: ArrayBuffer) => void) {
+    this.channel.addEventListener("message", function (event) {
+      if (typeof event.data === "string") return;
+      callback(event.data as ArrayBuffer);
     });
   }
 }
