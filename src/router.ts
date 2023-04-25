@@ -32,7 +32,7 @@ interface GameServer {
 
 function send(id: number, begin: number, length: number) {
   const exports = serverAsm?.instance.exports as unknown as GameServer;
-  const buffer = exports.memory.buffer.slice(begin, length);
+  const buffer = exports.memory.buffer.slice(begin, begin + length);
   channels[id].send(buffer);
 }
 
@@ -69,7 +69,11 @@ function handleDataChannel(channel: RTCDataChannel) {
       }
     } else {
       const exports = serverAsm?.instance.exports as unknown as GameServer;
-      const array = new Uint8Array(exports.memory.buffer, 0, data.byteLength);
+      const array = new Uint8Array(
+        exports.memory.buffer,
+        32768,
+        data.byteLength
+      );
       array.set(new Uint8Array(data));
       exports.onmessage(id, array.byteOffset, array.length);
     }
