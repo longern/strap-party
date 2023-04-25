@@ -10,12 +10,13 @@
   },
   "devDependencies": {
     "@types/ws": "^8.5.4",
-    "typescript": "^5.0.2",
     "vite": "^4.3.0"
   },
   "dependencies": {
     "itty-cors": "^0.3.6",
     "itty-router": "^3.0.12",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4",
     "ws": "^8.13.0"
   }
 }

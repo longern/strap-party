@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import fs from "fs";
 import { createServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -6,6 +7,24 @@ let backend: WebSocket | null = null;
 const requestMap = new Map<string, (reponse: Response) => void>();
 
 const server = createServer(function (req, res) {
+  if (req.method === "GET") {
+    let { pathname } = new URL(req.url!, "http://localhost/");
+    if (pathname === "/") pathname = "/index.html";
+    if (!fs.existsSync(`./dist${pathname}`)) {
+      res.statusCode = 404;
+      res.end("Not found");
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": {
+        ".html": "text/html",
+        ".js": "text/javascript",
+      }[pathname.slice(pathname.lastIndexOf("."))],
+    });
+    res.end(fs.readFileSync(`./dist${pathname}`));
+    return;
+  }
+
   if (!backend) {
     res.statusCode = 503;
     res.end("No backend connected");
@@ -52,8 +71,12 @@ const server = createServer(function (req, res) {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", function connection(ws, request) {
-  if (!["127.0.0.1", "::1", "localhost"].includes(request.socket.remoteAddress as string))
-    return ws.close();
+  const whitelist = ["127.0.0.1", "::1", "localhost"];
+  if (!whitelist.includes(request.socket.remoteAddress as string) || backend) {
+    console.warn(`Backend socket ${request.socket.remoteAddress} rejected`);
+    ws.close();
+    return;
+  }
 
   backend = ws;
   const socket = `${request.socket.remoteAddress}:${request.socket.remotePort}`;
@@ -76,5 +99,19 @@ wss.on("connection", function connection(ws, request) {
     })
   );
 });
+
+if (process.env.HEADLESS_CHROME) {
+  import("child_process").then(({ spawn }) => {
+    const chrome = spawn("chromium-browser", [
+      "--headless",
+      "--no-sandbox",
+      "--remote-debugging-port=0",
+      "http://localhost:5794/",
+    ]);
+    chrome.on("close", (code) => {
+      console.warn(`child process exited with code ${code}`);
+    });
+  });
+}
 
 server.listen(5794, "0.0.0.0");
