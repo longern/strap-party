@@ -1,14 +1,17 @@
+import child_process from "child_process";
 import crypto from "crypto";
+import express from "express";
 import fs from "fs";
-import { createServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 
 let backend: WebSocket | null = null;
 const requestMap = new Map<string, (reponse: Response) => void>();
 
-const server = createServer(function (req, res) {
+const app = express();
+
+app.all("*", async (req, res) => {
   if (req.method === "GET") {
-    let { pathname } = new URL(req.url!, "http://localhost/");
+    let { pathname } = new URL(req.url, "http://localhost/");
     if (pathname === "/") pathname = "/index.html";
     if (!fs.existsSync(`./dist${pathname}`)) {
       res.statusCode = 404;
@@ -68,7 +71,8 @@ const server = createServer(function (req, res) {
     );
   });
 });
-const wss = new WebSocketServer({ server });
+
+const wss = new WebSocketServer({ noServer: true });
 
 wss.on("connection", function connection(ws, request) {
   const whitelist = ["127.0.0.1", "::1", "localhost"];
@@ -100,18 +104,29 @@ wss.on("connection", function connection(ws, request) {
   );
 });
 
+if (process.env.PUBLIC_IP_COMMAND && !process.env.PUBLIC_IP) {
+  const stdout = child_process
+    .execSync(process.env.PUBLIC_IP_COMMAND)
+    .toString();
+  process.env.PUBLIC_IP = stdout.trim();
+  console.log(`Public IP: ${process.env.PUBLIC_IP}`);
+}
+
 if (process.env.HEADLESS_CHROME) {
-  import("child_process").then(({ spawn }) => {
-    const chrome = spawn("chromium-browser", [
-      "--headless",
-      "--no-sandbox",
-      "--remote-debugging-port=0",
-      "http://localhost:5794/",
-    ]);
-    chrome.on("close", (code) => {
-      console.warn(`child process exited with code ${code}`);
-    });
+  const chrome = child_process.spawn("chromium-browser", [
+    "--headless",
+    "--no-sandbox",
+    "--remote-debugging-port=0",
+    "http://localhost:5794/",
+  ]);
+  chrome.on("close", (code) => {
+    console.warn(`child process exited with code ${code}`);
   });
 }
 
-server.listen(5794, "0.0.0.0");
+const server = app.listen(5794, "0.0.0.0");
+server.on("upgrade", (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (socket) => {
+    wss.emit("connection", socket, request);
+  });
+});

@@ -14,7 +14,7 @@ class Client {
     conn.createOffer().then(async (offer) => {
       await conn.setLocalDescription(offer);
 
-      const answer = await fetch("http://localhost:5794/", {
+      const answer = await fetch(serverEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/sdp" },
         body: conn.localDescription!.sdp,
