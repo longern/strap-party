@@ -94,7 +94,10 @@ wss.on("connection", function connection(ws, request) {
     requestMap.get(response.id)?.(response.init);
   });
 
-  ws.on("close", (code, reason) => console.info(code, reason.toString()));
+  ws.on("close", () => {
+    console.log(`Backend socket ${socket} disconnected`);
+    backend = null;
+  });
 
   ws.send(
     JSON.stringify({

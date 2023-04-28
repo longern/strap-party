@@ -1,14 +1,18 @@
 import { Client } from "./client";
+import "./main.css";
 
 async function fetchWasm() {
   const res = await fetch(new URL("server.wasm", import.meta.url));
   return res.arrayBuffer();
 }
 
-const client = new Client("http://localhost:5794/", fetchWasm);
-
 document.getElementById("app")!.innerHTML = `
-  <table style="border: 1px solid black; border-collapse: collapse;">
+<div class="container">
+  <form id="connect-form">
+    <input type="text" id="server-endpoint" placeholder="Server Endpoint" required />
+    <button type="submit" id="connect" class="primary">Connect</button>
+  </form>
+  <table>
     <tr>
       <td cell-id="1"></td>
       <td cell-id="2"></td>
@@ -25,38 +29,42 @@ document.getElementById("app")!.innerHTML = `
       <td cell-id="9"></td>
     </tr>
   </table>
-  <style>
-    td {
-      width: 100px;
-      height: 100px;
-      border: 1px solid black;
-      text-align: center;
-      vertical-align: middle;
-    }
-  </style>
+</div>
 `;
 
-const chars = ["X", "O"];
-let myself: number | null = null;
+document
+  .getElementById("connect-form")!
+  .addEventListener("submit", function (e) {
+    e.preventDefault();
 
-for (let i = 1; i <= 9; i++) {
-  document
-    .querySelector(`[cell-id="${i}"]`)!
-    .addEventListener("click", function () {
-      if (this.textContent || myself === null) return;
-      client.send(new Uint8Array([i | (myself << 4)]).buffer);
+    const endpoint = (
+      document.getElementById("server-endpoint") as HTMLInputElement
+    ).value;
+    const client = new Client(endpoint, fetchWasm);
+    document.querySelector(".container")!.classList.add("connected");
+
+    client.onmessage((data) => {
+      const view = new Uint8Array(data);
+      const message = view[0];
+      const player = message >> 4;
+      const move = message & 0b1111;
+      if (!move) myself = player;
+      else
+        document.querySelector(`[cell-id="${move}"]`)!.textContent =
+          chars[player - 1];
     });
-}
 
-client.onmessage((data) => {
-  const view = new Uint8Array(data);
-  const message = view[0];
-  const player = message >> 4;
-  const move = message & 0b1111;
-  if (!move) myself = player;
-  else
-    document.querySelector(`[cell-id="${move}"]`)!.textContent =
-      chars[player - 1];
-});
+    const chars = ["×", "○"];
+    let myself: number | null = null;
 
-export {};
+    for (let i = 1; i <= 9; i++) {
+      document
+        .querySelector(`[cell-id="${i}"]`)!
+        .addEventListener("click", function () {
+          if (this.textContent || myself === null) return;
+          client.send(new Uint8Array([i | (myself << 4)]).buffer);
+        });
+    }
+
+    return false;
+  });
