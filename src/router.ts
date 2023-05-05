@@ -1,6 +1,8 @@
 import { Router, RequestLike } from "itty-router";
 import { createCors } from "itty-cors";
 
+import { server, channels, compile, instantiate, send } from "./wasm";
+
 const { preflight, corsify } = createCors({ methods: ["*"] });
 
 const router = Router();
@@ -8,7 +10,6 @@ const resources: Record<
   string,
   { peerConnection: RTCPeerConnection; dataChannel: RTCDataChannel | null }
 > = {};
-let serverAsm: WebAssembly.WebAssemblyInstantiatedSource | null = null;
 
 async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
   return new Promise<RTCSessionDescriptionInit>((resolve) => {
@@ -24,59 +25,42 @@ async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
 
 router.all("*", preflight as any);
 
-interface GameServer {
-  memory: WebAssembly.Memory;
-  ondatachannel(channelId: number): void;
-  onmessage(channelId: number, buffer: number, length: number): void;
-}
-
-function send(id: number, begin: number, length: number) {
-  const exports = serverAsm?.instance.exports as unknown as GameServer;
-  const buffer = exports.memory.buffer.slice(begin, begin + length);
-  channels[id].send(buffer);
-}
-
-const channels: Record<number, RTCDataChannel> = {};
 function handleDataChannel(channel: RTCDataChannel) {
-  // Max id in channels.
-  const id = Object.keys(channels).reduce((a, b) => Math.max(a, +b), 0) + 1;
-  channels[id] = channel;
+  const id = Math.max(...channels.keys(), 0) + 1;
+  channels.set(id, channel);
 
   channel.binaryType = "arraybuffer";
-  if (!serverAsm) {
+  if (!server) {
     channel.send(JSON.stringify({ status: 404 }));
   } else {
     channel.send(JSON.stringify({ status: 200 }));
   }
 
   function onopen() {
-    if (!serverAsm) return;
-    const exports = serverAsm?.instance.exports as unknown as GameServer;
-    exports.ondatachannel(id);
+    if (!server) return;
+    server.onopen?.(id);
   }
 
   onopen();
 
   channel.addEventListener("message", async function (event) {
     const data = event.data as ArrayBuffer;
-    if (!serverAsm) {
+    if (!server) {
       try {
-        serverAsm = await WebAssembly.instantiate(data, { env: { send } });
+        await compile(data);
+        await instantiate();
         onopen();
         this.send(JSON.stringify({ status: 204 }));
       } catch (e: any) {
         this.send(JSON.stringify({ status: 400, message: e.message }));
       }
     } else {
-      const exports = serverAsm?.instance.exports as unknown as GameServer;
-      const array = new Uint8Array(
-        exports.memory.buffer,
-        32768,
-        data.byteLength
-      );
-      array.set(new Uint8Array(data));
-      exports.onmessage(id, array.byteOffset, array.length);
+      send(id, data);
     }
+  });
+
+  channel.addEventListener("close", function () {
+    server!.onclose?.(id);
   });
 }
 

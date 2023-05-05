@@ -51,7 +51,7 @@ document
       if (!move) myself = player;
       else
         document.querySelector(`[cell-id="${move}"]`)!.textContent =
-          chars[player - 1];
+          chars[player];
     });
 
     const chars = ["×", "○"];

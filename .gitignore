@@ -23,3 +23,11 @@ yarn-error.log*
 
 # Visual Studio Code
 /.vscode
+
+# Rust
+**/target
+**/*.rs.bk
+Cargo.lock
+bin/
+pkg/
+wasm-pack.log

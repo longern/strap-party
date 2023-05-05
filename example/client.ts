@@ -1,14 +1,12 @@
 class Client {
   serverEndpoint: string;
-  serverAsm: () => Promise<ArrayBuffer>;
-  channel: RTCDataChannel;
+  #channel: RTCDataChannel;
 
   constructor(serverEndpoint: string, serverAsm: () => Promise<ArrayBuffer>) {
     this.serverEndpoint = serverEndpoint;
-    this.serverAsm = serverAsm;
 
     const conn = new RTCPeerConnection();
-    this.channel = conn.createDataChannel("main", {
+    this.#channel = conn.createDataChannel("main", {
       ordered: false,
     });
     conn.createOffer().then(async (offer) => {
@@ -17,12 +15,12 @@ class Client {
       const answer = await fetch(serverEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/sdp" },
-        body: conn.localDescription!.sdp,
+        body: offer.sdp,
       }).then((res) => res.text());
 
       conn.setRemoteDescription({ type: "answer", sdp: answer });
 
-      this.channel.addEventListener("message", function (event) {
+      this.#channel.addEventListener("message", function (event) {
         if (typeof event.data !== "string") return;
         const data = event.data;
         const { status } = JSON.parse(data);
@@ -34,14 +32,18 @@ class Client {
   }
 
   send(data: ArrayBuffer) {
-    this.channel.send(data);
+    this.#channel.send(data);
   }
 
   onmessage(callback: (data: ArrayBuffer) => void) {
-    this.channel.addEventListener("message", function (event) {
+    const callbackWrapper = (event: MessageEvent) => {
       if (typeof event.data === "string") return;
       callback(event.data as ArrayBuffer);
-    });
+    };
+    this.#channel.addEventListener("message", callbackWrapper);
+    return () => {
+      this.#channel.removeEventListener("message", callbackWrapper);
+    };
   }
 }
 
