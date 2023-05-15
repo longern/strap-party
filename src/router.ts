@@ -40,30 +40,28 @@ function handleWasmDataChannel(channel: RTCDataChannel) {
     buffer.push(data);
     accumulatedLength += data.byteLength;
     if (accumulatedLength >= fileLength) {
-      channel.close();
+      // Merge all buffers
+      const bytes = new Uint8Array(accumulatedLength);
+      let offset = 0;
+      for (const buf of buffer) {
+        bytes.set(new Uint8Array(buf), offset);
+        offset += buf.byteLength;
+      }
+
+      // Hash the buffer
+      crypto.subtle.digest("SHA-256", bytes).then((hash) => {
+        const hashHex = Array.from(new Uint8Array(hash))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+        console.log(`WASM hash: ${hashHex}`); // eslint-disable-line no-console
+      });
+
+      compile(bytes.buffer)
+        .then(instantiate)
+        .finally(() => {
+          channel.close();
+        });
     }
-  });
-
-  channel.addEventListener("close", async function () {
-    // Merge all buffers
-    const bytes = new Uint8Array(
-      buffer.reduce((acc, cur) => acc + cur.byteLength, 0)
-    );
-    let offset = 0;
-    for (const buf of buffer) {
-      bytes.set(new Uint8Array(buf), offset);
-      offset += buf.byteLength;
-    }
-
-    // Hash the buffer
-    const hash = await crypto.subtle.digest("SHA-256", bytes);
-    const hashHex = Array.from(new Uint8Array(hash))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    console.log(`WASM hash: ${hashHex}`);
-
-    await compile(bytes.buffer);
-    await instantiate();
   });
 }
 

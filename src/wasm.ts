@@ -8,6 +8,7 @@ interface GameServer {
   _start?(): void;
   onopen?(channelId: number): void;
   onmessage(channelId: number, length: number): void;
+  ontick?(): void;
   onclose?(channelId: number): void;
 }
 
@@ -27,11 +28,7 @@ const env = {
       return -1;
     }
 
-    const serverMemory = new Uint8Array(
-      server!.memory.buffer,
-      begin,
-      begin + length
-    );
+    const serverMemory = new Uint8Array(server!.memory.buffer, begin, length);
     serverMemory.set(new Uint8Array(data));
     return data.byteLength;
   },
@@ -40,7 +37,9 @@ const env = {
     const buffer = server!.memory.buffer.slice(begin, begin + length);
     const channel = channels.get(id);
     if (!channel) {
-      console.error(`Channel ${id} not found`);
+      return -1;
+    }
+    if (channel.readyState !== "open") {
       return -1;
     }
     channel.send(buffer);
@@ -67,6 +66,11 @@ export async function instantiate() {
   const serverInstance = await WebAssembly.instantiate(serverModule!, { env });
   server = serverInstance.exports as unknown as GameServer;
   server._start?.();
+  if (server.ontick) {
+    setInterval(() => {
+      server!.ontick!();
+    }, 1000 / 60);
+  }
   return server;
 }
 
