@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "wasm": "cd example/server && cargo build --release"
+    "wasm": "cd example/server && cargo build --release",
+    "prod": "ts-node --esm index.ts"
   },
   "devDependencies": {
     "@types/express": "^4.17.17",
