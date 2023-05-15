@@ -25,6 +25,48 @@ async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
 
 router.all("*", preflight as any);
 
+function handleWasmDataChannel(channel: RTCDataChannel) {
+  channel.binaryType = "arraybuffer";
+  let fileLength = 0;
+  let accumulatedLength = 0;
+  const buffer: ArrayBuffer[] = [];
+
+  channel.addEventListener("message", function (event) {
+    const data = event.data as ArrayBuffer;
+    if (typeof data === "string") {
+      fileLength = parseInt(data);
+      return;
+    }
+    buffer.push(data);
+    accumulatedLength += data.byteLength;
+    if (accumulatedLength >= fileLength) {
+      channel.close();
+    }
+  });
+
+  channel.addEventListener("close", async function () {
+    // Merge all buffers
+    const bytes = new Uint8Array(
+      buffer.reduce((acc, cur) => acc + cur.byteLength, 0)
+    );
+    let offset = 0;
+    for (const buf of buffer) {
+      bytes.set(new Uint8Array(buf), offset);
+      offset += buf.byteLength;
+    }
+
+    // Hash the buffer
+    const hash = await crypto.subtle.digest("SHA-256", bytes);
+    const hashHex = Array.from(new Uint8Array(hash))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    console.log(`WASM hash: ${hashHex}`);
+
+    await compile(bytes.buffer);
+    await instantiate();
+  });
+}
+
 function handleDataChannel(channel: RTCDataChannel) {
   const id = Math.max(...channels.keys(), 0) + 1;
   channels.set(id, channel);
@@ -36,27 +78,10 @@ function handleDataChannel(channel: RTCDataChannel) {
     channel.send(JSON.stringify({ status: 200 }));
   }
 
-  function onopen() {
-    if (!server) return;
-    server.onopen?.(id);
-  }
-
-  onopen();
+  server?.onopen?.(id);
 
   channel.addEventListener("message", async function (event) {
-    const data = event.data as ArrayBuffer;
-    if (!server) {
-      try {
-        await compile(data);
-        await instantiate();
-        onopen();
-        this.send(JSON.stringify({ status: 204 }));
-      } catch (e: any) {
-        this.send(JSON.stringify({ status: 400, message: e.message }));
-      }
-    } else {
-      send(id, data);
-    }
+    send(id, event.data as ArrayBuffer);
   });
 
   channel.addEventListener("close", function () {
@@ -72,7 +97,8 @@ router.post("/", async (req, env) => {
 
   peerConnection.addEventListener("datachannel", (event) => {
     resources[resourceId].dataChannel = event.channel;
-    handleDataChannel(event.channel);
+    if (event.channel.label === "wasm") handleWasmDataChannel(event.channel);
+    else handleDataChannel(event.channel);
   });
 
   peerConnection.addEventListener("connectionstatechange", function () {

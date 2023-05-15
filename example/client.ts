@@ -25,7 +25,16 @@ class Client {
         const data = event.data;
         const { status } = JSON.parse(data);
         if (status === 404) {
-          serverAsm().then((bytes) => this.send(bytes));
+          serverAsm().then((bytes) => {
+            const wasmChannel = conn.createDataChannel("wasm");
+            wasmChannel.onopen = () => {
+              wasmChannel.send(bytes.byteLength.toString());
+              const CHUNK_SIZE = 16384;
+              for (let i = 0; i < bytes.byteLength; i += CHUNK_SIZE) {
+                wasmChannel.send(bytes.slice(i, i + CHUNK_SIZE));
+              }
+            };
+          });
         }
       });
     });
