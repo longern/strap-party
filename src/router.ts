@@ -1,15 +1,11 @@
 import { Router, RequestLike } from "itty-router";
 import { createCors } from "itty-cors";
-
-import { server, channels, compile, instantiate, send } from "./wasm";
+import { allocateChannel, connections as resources, server } from "./state";
+export let worker: Worker | null = null;
 
 const { preflight, corsify } = createCors({ methods: ["*"] });
 
 const router = Router();
-const resources: Record<
-  string,
-  { peerConnection: RTCPeerConnection; dataChannel: RTCDataChannel | null }
-> = {};
 
 async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
   return new Promise<RTCSessionDescriptionInit>((resolve) => {
@@ -26,6 +22,19 @@ async function waitToCompleteICEGathering(peerConnection: RTCPeerConnection) {
 router.all("*", preflight as any);
 
 function handleWasmDataChannel(channel: RTCDataChannel) {
+  const workerUrl = new URL("./worker.ts", import.meta.url);
+  worker = new Worker(workerUrl, { type: "module" });
+
+  function handler(event: MessageEvent) {
+    if (["open", "error"].includes(event.data.type)) {
+      if (event.data.type === "error") console.error(event.data.message);
+      channel.close();
+      worker!.removeEventListener("message", handler);
+    }
+  }
+
+  worker.addEventListener("message", handler);
+
   channel.binaryType = "arraybuffer";
   let fileLength = 0;
   let accumulatedLength = 0;
@@ -47,6 +56,7 @@ function handleWasmDataChannel(channel: RTCDataChannel) {
         bytes.set(new Uint8Array(buf), offset);
         offset += buf.byteLength;
       }
+      server.size = bytes.byteLength;
 
       // Hash the buffer
       crypto.subtle.digest("SHA-256", bytes).then((hash) => {
@@ -54,49 +64,57 @@ function handleWasmDataChannel(channel: RTCDataChannel) {
           .map((b) => b.toString(16).padStart(2, "0"))
           .join("");
         console.log(`WASM hash: ${hashHex}`); // eslint-disable-line no-console
+        server.hash = hashHex;
       });
 
-      compile(bytes.buffer)
-        .then(instantiate)
-        .finally(() => {
-          channel.close();
-        });
+      worker!.postMessage(bytes);
     }
   });
 }
 
-function handleDataChannel(channel: RTCDataChannel) {
-  const id = Math.max(...channels.keys(), 0) + 1;
-  channels.set(id, channel);
-
+function handleDataChannel(resourceId: number, channel: RTCDataChannel) {
   channel.binaryType = "arraybuffer";
-  if (!server) {
+  if (!worker) {
     channel.send(JSON.stringify({ status: 404 }));
-  } else {
-    channel.send(JSON.stringify({ status: 200 }));
+    channel.close();
+    return;
   }
 
-  server?.onopen?.(id);
+  channel.send(JSON.stringify({ status: 200 }));
+
+  worker?.addEventListener("message", function (event) {
+    const data = event.data as {
+      id: number;
+      type: "open" | "message" | "close";
+      data?: ArrayBuffer;
+    };
+    if (data.id !== resourceId) return;
+    if (data.type === "message") channel.send(data.data!);
+    else if (data.type === "open") channel.close();
+  });
+
+  worker?.postMessage({ id: resourceId, type: "open" });
 
   channel.addEventListener("message", async function (event) {
-    send(id, event.data as ArrayBuffer);
+    const data = event.data as ArrayBuffer;
+    worker?.postMessage({ id: resourceId, type: "message", data }, [data]);
   });
 
   channel.addEventListener("close", function () {
-    server!.onclose?.(id);
+    worker?.postMessage({ id: resourceId, type: "close" });
   });
 }
 
 router.post("/", async (req, env) => {
   const offer: string = await req.text();
   const peerConnection = new RTCPeerConnection();
-  const resourceId = crypto.randomUUID();
+  const resourceId = allocateChannel();
   resources[resourceId] = { peerConnection, dataChannel: null };
 
   peerConnection.addEventListener("datachannel", (event) => {
     resources[resourceId].dataChannel = event.channel;
     if (event.channel.label === "wasm") handleWasmDataChannel(event.channel);
-    else handleDataChannel(event.channel);
+    else handleDataChannel(resourceId, event.channel);
   });
 
   peerConnection.addEventListener("connectionstatechange", function () {

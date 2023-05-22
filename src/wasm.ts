@@ -7,7 +7,7 @@ interface GameServer {
   memory: WebAssembly.Memory;
   _start?(): void;
   onopen?(channelId: number): void;
-  onmessage(channelId: number, length: number): void;
+  onmessage(channelId: number, length: number): number;
   ontick?(): void;
   onclose?(channelId: number): void;
 }
@@ -37,9 +37,6 @@ const env = {
     const buffer = server!.memory.buffer.slice(begin, begin + length);
     const channel = channels.get(id);
     if (!channel) {
-      return -1;
-    }
-    if (channel.readyState !== "open") {
       return -1;
     }
     channel.send(buffer);
@@ -74,8 +71,8 @@ export async function instantiate() {
   return server;
 }
 
-export async function send(channelId: number, data: ArrayBuffer) {
+export function send(channelId: number, data: ArrayBuffer) {
   if (!server) throw new Error("Server not instantiated");
   messageBuffer.push([channelId, data]);
-  server.onmessage(channelId, data.byteLength);
+  return server.onmessage(channelId, data.byteLength);
 }
