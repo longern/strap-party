@@ -1,6 +1,7 @@
-import { connections, server } from "./state";
+import { HOST, connections, server } from "./state";
 
 document.getElementById("app")!.innerHTML = `
+<div id="origin">http://${HOST}</div>
 <div id="server-hash"></div>
 <div id="server-size"></div>
 <div id="connections"></div>

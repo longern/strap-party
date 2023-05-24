@@ -15,3 +15,5 @@ export function allocateChannel(): number {
   channelCounter++;
   return channelCounter;
 }
+
+export const HOST = "127.0.0.1:5794";

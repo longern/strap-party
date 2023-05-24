@@ -1,6 +1,7 @@
 import router from "./router";
+import { HOST } from "./state";
 
-const ws = new WebSocket("ws://127.0.0.1:5794/");
+const ws = new WebSocket(`ws://${HOST}/"`);
 const env = {};
 
 ws.onmessage = async function (event) {
