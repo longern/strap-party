@@ -7,8 +7,21 @@ class Client {
 
     const conn = new RTCPeerConnection();
     this.#channel = conn.createDataChannel("main", {
+      negotiated: true,
+      id: 0,
       ordered: false,
     });
+
+    conn.addEventListener("datachannel", async (event) => {
+      if (event.channel.label !== "wasm") return;
+      const bytes = await serverAsm();
+      event.channel.send(bytes.byteLength.toString());
+      const CHUNK_SIZE = 16384;
+      for (let i = 0; i < bytes.byteLength; i += CHUNK_SIZE) {
+        event.channel.send(bytes.slice(i, i + CHUNK_SIZE));
+      }
+    });
+
     conn.createOffer().then(async (offer) => {
       await conn.setLocalDescription(offer);
 
@@ -19,24 +32,6 @@ class Client {
       }).then((res) => res.text());
 
       conn.setRemoteDescription({ type: "answer", sdp: answer });
-
-      this.#channel.addEventListener("message", function (event) {
-        if (typeof event.data !== "string") return;
-        const data = event.data;
-        const { status } = JSON.parse(data);
-        if (status === 404) {
-          serverAsm().then((bytes) => {
-            const wasmChannel = conn.createDataChannel("wasm");
-            wasmChannel.onopen = () => {
-              wasmChannel.send(bytes.byteLength.toString());
-              const CHUNK_SIZE = 16384;
-              for (let i = 0; i < bytes.byteLength; i += CHUNK_SIZE) {
-                wasmChannel.send(bytes.slice(i, i + CHUNK_SIZE));
-              }
-            };
-          });
-        }
-      });
     });
   }
 

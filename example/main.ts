@@ -2,7 +2,7 @@ import { Client } from "./client";
 import "./main.css";
 
 async function fetchWasm() {
-  const res = await fetch(new URL("server.wasm", import.meta.url));
+  const res = await fetch(new URL("tic_tac_toe_wasm.wasm", import.meta.url));
   return res.arrayBuffer();
 }
 

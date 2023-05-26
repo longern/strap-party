@@ -74,15 +74,8 @@ function handleWasmDataChannel(channel: RTCDataChannel) {
 
 function handleDataChannel(resourceId: number, channel: RTCDataChannel) {
   channel.binaryType = "arraybuffer";
-  if (!worker) {
-    channel.send(JSON.stringify({ status: 404 }));
-    channel.close();
-    return;
-  }
 
-  channel.send(JSON.stringify({ status: 200 }));
-
-  worker?.addEventListener("message", function (event) {
+  function handleWorkerMessage(event: MessageEvent) {
     const data = event.data as {
       id: number;
       type: "open" | "message" | "close";
@@ -90,10 +83,13 @@ function handleDataChannel(resourceId: number, channel: RTCDataChannel) {
     };
     if (data.id !== resourceId) return;
     if (data.type === "message") channel.send(data.data!);
-    else if (data.type === "open") channel.close();
-  });
+    else if (data.type === "close") channel.close();
+  }
+  worker?.addEventListener("message", handleWorkerMessage);
 
-  worker?.postMessage({ id: resourceId, type: "open" });
+  channel.addEventListener("open", function () {
+    worker?.postMessage({ id: resourceId, type: "open" });
+  });
 
   channel.addEventListener("message", async function (event) {
     const data = event.data as ArrayBuffer;
@@ -102,20 +98,27 @@ function handleDataChannel(resourceId: number, channel: RTCDataChannel) {
 
   channel.addEventListener("close", function () {
     worker?.postMessage({ id: resourceId, type: "close" });
+    worker?.removeEventListener("message", handleWorkerMessage);
   });
 }
 
 router.post("/", async (req, env) => {
   const offer: string = await req.text();
   const peerConnection = new RTCPeerConnection();
-  const resourceId = allocateChannel();
-  resources[resourceId] = { peerConnection, dataChannel: null };
-
-  peerConnection.addEventListener("datachannel", (event) => {
-    resources[resourceId].dataChannel = event.channel;
-    if (event.channel.label === "wasm") handleWasmDataChannel(event.channel);
-    else handleDataChannel(resourceId, event.channel);
+  const mainChannel = peerConnection.createDataChannel("main", {
+    negotiated: true,
+    id: 0,
+    ordered: false,
   });
+  const resourceId = allocateChannel();
+  resources[resourceId] = { peerConnection, dataChannel: mainChannel };
+
+  if (!worker) {
+    const wasmChannel = peerConnection.createDataChannel("wasm");
+    handleWasmDataChannel(wasmChannel);
+  }
+
+  handleDataChannel(resourceId, mainChannel);
 
   peerConnection.addEventListener("connectionstatechange", function () {
     if (["failed", "closed"].includes(peerConnection.connectionState)) {
