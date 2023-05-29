@@ -17,8 +17,9 @@ export class WASI {
   fds: Map<number, FileDescriptor>;
 
   constructor(options?: { args?: string[]; env?: Record<string, string> }) {
-    const args = options?.args ?? [];
-    const env = options?.env ?? {};
+    options = options ?? {};
+    const args = options.args ?? [];
+    const env = options.env ?? {};
 
     this.args = args;
     this.env = env;
@@ -116,20 +117,22 @@ export class WASI {
         return 0;
       },
 
-      timer_create: (ms: number) => {
+      timer_create: (ms: number, fdPtr: number) => {
         const newFd = Math.max(...this.fds.keys()) + 1;
         let resolve: () => void;
-        let promise: Promise<void> = new Promise((res) => (resolve = res));
-        const interval = window.setInterval(() => resolve(), ms);
+        let promise = new Promise<void>((res) => (resolve = res));
+        const interval = self.setInterval(() => resolve(), ms);
         this.fds.set(newFd, {
-          close: () => window.clearInterval(interval),
+          close: () => self.clearInterval(interval),
           ready: () => promise,
           read: () => {
             promise = new Promise((res) => (resolve = res));
             return new Uint8Array([0]).buffer;
           },
         });
-        return newFd;
+        const view = new DataView(this.exports.memory.buffer, fdPtr, 4);
+        view.setInt32(0, newFd, true);
+        return 0;
       },
     };
 
