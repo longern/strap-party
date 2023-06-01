@@ -121,9 +121,9 @@ export class WASI {
         const newFd = Math.max(...this.fds.keys()) + 1;
         let resolve: () => void;
         let promise = new Promise<void>((res) => (resolve = res));
-        const interval = self.setInterval(() => resolve(), ms);
+        const interval = setInterval(() => resolve(), ms);
         this.fds.set(newFd, {
-          close: () => self.clearInterval(interval),
+          close: () => clearInterval(interval),
           ready: () => promise,
           read: () => {
             promise = new Promise((res) => (resolve = res));

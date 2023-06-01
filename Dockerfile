@@ -5,8 +5,6 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
 
-ENV HEADLESS_CHROME 1
 EXPOSE 5794
-CMD ["npx", "ts-node-esm", "index.ts"]
+CMD ["npx", "ts-node", "--esm", "src/index.ts"]
